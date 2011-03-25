@@ -1,0 +1,30 @@
+--- #YAML:1.0
+name:               Protocol-Redis-XS
+version:            0.01
+abstract:           hiredis based parser compatible with Protocol::Redis
+author:
+    - David Leadbeater <dgl@dgl.cx>
+license:            perl
+distribution_type:  module
+configure_requires:
+    ExtUtils::Depends:    0
+    ExtUtils::MakeMaker:  6.31
+    XS::Object::Magic:    0
+build_requires:
+    Protocol::Redis:  0.9001
+    Test::More:       0.88
+requires:
+    parent:             0
+    Protocol::Redis:    0.9001
+    XS::Object::Magic:  0
+    XSLoader:           0
+resources:
+    repository:  https://github.com/dgl/protocol-redis-xs
+no_index:
+    directory:
+        - t
+        - inc
+generated_by:       ExtUtils::MakeMaker version 6.56
+meta-spec:
+    url:      http://module-build.sourceforge.net/META-spec-v1.4.html
+    version:  1.4
