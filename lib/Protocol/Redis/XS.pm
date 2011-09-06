@@ -6,23 +6,24 @@ use parent "Protocol::Redis";
 use XS::Object::Magic;
 use XSLoader;
 
-our $VERSION = '0.02';
+our $VERSION = '0.04';
 
 XSLoader::load "Protocol::Redis::XS", $VERSION;
 
 sub new {
-  my($class) = @_;
-  my $self = bless {}, $class;
+  my($class, %args) = @_;
+  my $self = bless \%args, $class;
+  return unless $self->api == 1;
   $self->_create;
 
   return $self;
 }
 
 # See Protocol::Redis for description of the API versioning
-sub use_api {
-  my($self, $api_version) = @_;
+sub api {
+  my($self) = @_;
 
-  return $api_version == 1;
+  $self->{api};
 }
 
 sub on_message {

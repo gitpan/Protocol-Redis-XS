@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Protocol-Redis-XS
-version:            0.02
+version:            0.04
 abstract:           hiredis based parser compatible with Protocol::Redis
 author:
     - David Leadbeater <dgl@dgl.cx>
