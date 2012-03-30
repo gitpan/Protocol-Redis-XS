@@ -6,14 +6,19 @@ use parent "Protocol::Redis";
 use XS::Object::Magic;
 use XSLoader;
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 XSLoader::load "Protocol::Redis::XS", $VERSION;
 
 sub new {
   my($class, %args) = @_;
+
+  my $on_message = delete $args{on_message};
+
   my $self = bless \%args, $class;
   return unless $self->api == 1;
+  $self->on_message($on_message) if defined $on_message;
+
   $self->_create;
 
   return $self;

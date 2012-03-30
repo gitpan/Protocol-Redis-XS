@@ -13,7 +13,7 @@
   dTHXa(task->privdata);
 
 #define SET_THX_REDIS(r)                    \
-  redisReplyReaderSetPrivdata(r, aTHX);
+  do { r->privdata = aTHX; } while(0)
 
 #else
 
@@ -115,7 +115,72 @@ static redisReplyObjectFunctions perlRedisFunctions = {
   freeReplyObjectSV
 };
 
-typedef void reply_reader_t;
+static SV *encodeMessage(pTHX_ SV *message_p);
+
+static SV *encodeString(pTHX_ SV *message_p) {
+  HV *const message = (HV*)SvRV(message_p);
+  SV **const type_sv = hv_fetchs(message, "type", FALSE);
+  SV **const data_sv = hv_fetchs(message, "data", FALSE);
+
+  char *type = SvPV_nolen(*type_sv);
+  char *data = SvPV_nolen(*data_sv);
+
+  return newSVpvf("%s%s\r\n", type, data);
+};
+
+static SV *encodeBulk(pTHX_ SV *message_p) {
+  HV *const message = (HV*)SvRV(message_p);
+  SV **const data_sv = hv_fetchs(message, "data", FALSE);
+
+  if (!SvOK(*data_sv))
+    return newSVpvf("$-1\r\n");
+
+  STRLEN len;
+  char *data = SvPV(*data_sv, len);
+
+  return newSVpvf("$%u\r\n%s\r\n", len, data);
+};
+
+static SV *encodeMultiBulk (pTHX_ SV *message_p) {
+  HV *const message = (HV*)SvRV(message_p);
+  SV **const data_sv = hv_fetchs(message, "data", FALSE);
+
+  if (!SvOK(*data_sv))
+    return newSVpv("*-1\r\n", 0);
+
+  AV *const data = (AV*)SvRV(*data_sv);
+  I32 len = av_len(data);
+  SV *r = newSVpvf("*%ld\r\n", len+1);
+
+  I32 i;
+  for (i = 0; i <= len; i++) {
+    sv_catsv(r, encodeMessage(aTHX_ *av_fetch(data, i, FALSE)));
+  };
+
+  return r;
+}
+
+static SV *encodeMessage(pTHX_ SV *message_p) {
+  HV *const message = (HV*)SvRV(message_p);
+  SV **const type_sv = hv_fetchs(message, "type", FALSE);
+
+  char *type = SvPV_nolen(*type_sv);
+  const char op = type[0];
+
+  if (1 != strlen(type) || NULL == strchr("+-:$*", op)) 
+    croak("Unknown message type: \"%s\"", type);
+
+  switch (op) {
+    case '+':
+    case '-':
+    case ':':
+      return encodeString(aTHX_ message_p);
+    case '$':
+      return encodeBulk(aTHX_ message_p);
+    case '*':
+      return encodeMultiBulk(aTHX_ message_p);
+  }
+}
 
 MODULE = Protocol::Redis::XS  PACKAGE = Protocol::Redis::XS
 PROTOTYPES: ENABLE
@@ -123,38 +188,34 @@ PROTOTYPES: ENABLE
 void
 _create(SV *self)
   PREINIT:
-    reply_reader_t *r;
+    redisReader *r;
   CODE:
-    r = redisReplyReaderCreate();
-    if(redisReplyReaderSetReplyObjectFunctions(r, &perlRedisFunctions)
-        != REDIS_OK) {
-      redisReplyReaderFree(r);
-      croak("Unable to set reply object functions");
-    }
+    r = redisReaderCreate();
+    r->fn = &perlRedisFunctions;
     SET_THX_REDIS(r);
     xs_object_magic_attach_struct(aTHX_ SvRV(self), r);
 
 void
-DESTROY(reply_reader_t *r)
+DESTROY(redisReader *r)
   CODE:
-    redisReplyReaderFree(r);
+    redisReaderFree(r);
 
 void
 parse(SV *self, SV *data)
   PREINIT:
-    void *r;
+    redisReader *r;
     SV **callback;
   CODE:
     r = xs_object_magic_get_struct(aTHX_ SvRV(self));
-    redisReplyReaderFeed(r, SvPVX(data), SvCUR(data));
+    redisReaderFeed(r, SvPVX(data), SvCUR(data));
 
     callback = hv_fetchs((HV*)SvRV(self), "_on_message_cb", FALSE);
     if (callback && SvOK(*callback)) {
       /* There's a callback, do parsing now. */
       SV *reply;
       do {
-        if(redisReplyReaderGetReply(r, (void**)&reply) == REDIS_ERR) {
-          croak("%s", redisReplyReaderGetError(r));
+        if(redisReaderGetReply(r, (void**)&reply) == REDIS_ERR) {
+          croak("%s", r->errstr);
         }
 
         if (reply) {
@@ -180,13 +241,20 @@ parse(SV *self, SV *data)
     }
 
 SV*
-get_message(reply_reader_t *r)
+get_message(redisReader *r)
   CODE:
-    if(redisReplyReaderGetReply(r, (void**)&RETVAL) == REDIS_ERR) {
-      croak("%s", redisReplyReaderGetError(r));
+    if(redisReaderGetReply(r, (void**)&RETVAL) == REDIS_ERR) {
+      croak("%s", r->errstr);
     }
     if(!RETVAL)
       RETVAL = &PL_sv_undef;
 
+  OUTPUT:
+    RETVAL
+
+SV*
+encode(SV *self, SV *message)
+  CODE:
+    RETVAL = encodeMessage(aTHX_ message);
   OUTPUT:
     RETVAL
